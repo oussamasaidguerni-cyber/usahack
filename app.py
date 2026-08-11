@@ -9,8 +9,6 @@ DB_PATH = BASE_DIR / "shop.db"
 
 app = Flask(__name__)
 
-seed()
-
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "5000"))
 
@@ -95,6 +93,9 @@ def seed():
         conn.execute("INSERT INTO products (name, price) VALUES ('Wireless mouse', 24.50)")
     conn.commit()
     conn.close()
+
+
+seed()
 
 
 @app.route("/")
