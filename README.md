@@ -22,12 +22,16 @@ If you ever want to run it publicly for others to practice, host it in the cloud
 | Page | Vulnerability | OWASP mapping |
 |------|---------------|---------------|
 | `/search` | SQL injection + reflected XSS | A03 / A03 |
-| `/login` | SQL injection + plaintext passwords | A07 / A02 |
+| `/login` | SQL injection + plaintext passwords + no rate limiting (brute-forceable) | A07 / A02 |
 | `/profile?id=N` | IDOR (insecure object reference) | A01 |
 | `/comments` | Stored XSS (second-order SQLi too) | A03 |
 | `/checkout` | Client-side price manipulation | A04 |
 | `/files?name=` | Path traversal | A01 |
 | `/admin` | Forgeable auth cookie (broken access control) | A01 |
+| `/server` | Command injection | A03 |
+| `/ssti` | Server-side template injection (Jinja) | A03 |
+| `/settings` | CSRF (state-changing GET, no token) | A01 |
+| `/score` | Track your found flags (11 total) | - |
 
 Full walkthrough and fixes: [solutions.md](solutions.md)
 
@@ -83,6 +87,12 @@ Interpreter" -> `./venv/bin/python`) so the debugger works too. You can then pre
 4. Buy the laptop for $0.01.
 5. Make the comments page run `alert(1)`.
 6. Get into the admin panel without being admin.
+7. Run `whoami` on the server via the ping tool.
+8. Make the greeting page render `7*7` as `49`.
+9. Brute-force dave's password (nothing locks you out).
+10. Change admin's email without logging in as admin.
+
+Track what you've found on the `/score` page (11 flags total).
 
 Start with the Search page. It's the friendliest.
 

@@ -182,14 +182,146 @@ session["role"] = "admin"                  # set on the server at login
 
 ---
 
-## Summary of the fixes
+## 8. Command injection on `/server` (mission: run `whoami`)
 
+Type this into the ping box:
+
+```
+8.8.8.8; whoami
+```
+
+The `;` ends the `ping` command, and your second command runs. Try `; cat server_flag.txt`
+for the flag, or `; ls` to browse the server's folder.
+
+**Why:** the app builds the shell command by string concatenation and runs it with
+`shell=True`. That's the exact pattern behind real RCE (remote code execution) bugs.
+
+```python
+# vulnerable
+subprocess.run(f"ping -c 1 {host}", shell=True, ...)
+```
+
+**Fix:** never pass user input into a shell. Use an argument list (no `shell=True`)
+and whitelist what's allowed:
+
+```python
+import subprocess
+result = subprocess.run(["ping", "-c", "1", host], capture_output=True, text=True)
+```
+
+This passes `host` as a single argument, never interpreted by a shell.
+
+---
+
+## 9. SSTI on `/ssti` (mission: render `7*7` as `49`)
+
+Type this into the name field:
+
+```
+{{ 7*7 }}
+```
+
+The page greets you with "Hello 49!". Now try:
+
+```
+{{ config.FLAG }}
+```
+
+That reads the app's config and prints the hidden flag. SSTI is a direct route to
+full remote code execution on the server.
+
+**Why:** your input is inserted into a Jinja template and rendered:
+
+```python
+render_template_string(f"Hello {name}!")
+```
+
+Jinja evaluates `{{ ... }}` inside the template, so you're running template code.
+
+**Fix:** never render user input as a template. Treat it as plain data and let the
+template engine escape it:
+
+```python
+return render_template("hello.html", name=name)  # name stays data, not code
+```
+
+---
+
+## 10. Brute-forcing dave (mission: guess his password)
+
+The login has no rate limiting and no lockout, so you can try as many passwords as
+you like. Use curl or a tiny script:
+
+```bash
+for pw in admin password 123456 letmein qwerty; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' \
+    -d "username=dave&password=$pw" http://127.0.0.1:5000/login)
+  echo "$pw -> $code"
+done
+```
+
+`302` (a redirect) means it worked: dave's password is `letmein`. With a real
+wordlist, the same script is a brute-force attack.
+
+**Why:** no limit on failed attempts means attackers get infinite guesses, and the
+password is weak (`letmein`).
+
+**Fix:**
+- Rate-limit logins (e.g. slow down or block after 5 failures per account/IP).
+- Enforce strong passwords.
+- Best defense: multi-factor authentication.
+
+```python
+# pseudocode - track attempts per username+IP
+if failures(username, ip) >= 5:
+    block(username, ip)          # or force a delay
+```
+
+---
+
+## 11. CSRF: change admin's email (mission: without logging in as admin)
+
+1. Log in as admin (`admin` / `admin123` - you dumped these earlier).
+2. Open a new tab and visit the email change as a **link**:
+   ```
+   http://127.0.0.1:5000/settings?email=hacked@usahack.test
+   ```
+3. Go to `/settings` - admin's email is now `hacked@usahack.test` and the flag
+   is shown.
+
+In real life the attacker hosts a page that silently redirects the victim to that
+URL (or auto-submits a form). The browser attaches the victim's session cookie, so
+the server can't tell the request isn't from the victim.
+
+**Why:** the app authenticates with a cookie, and the state-changing action (email
+change) has no CSRF token and even works over GET. Anyone who can trigger that
+request from the victim's browser wins.
+
+**Fix:**
+- Never change state over GET.
+- Add an unguessable CSRF token to every state-changing form, and verify it
+  server-side. In Flask:
+
+```python
+from flask_wtf import FlaskForm
+# each form carries a token that the server validates before acting
+```
+
+- Use same-site cookies (they don't stop all CSRF, but they block the common cases).
+
+---
+
+## Summary of the fixes
 1. Use parameterized SQL queries (`?` placeholders) - everywhere.
 2. Hash passwords (`werkzeug.security`), never store plaintext.
 3. Don't trust client input - validate ids, prices, and filenames server-side.
 4. Escape output in templates (use `{{ }}`, never `|safe` on user data).
 5. Use server-side signed sessions for auth, not forgeable cookies.
 6. Enforce access control on every protected route, not just the button.
+7. Never build shell commands from user input (no `shell=True`).
+8. Never render user input as a template.
+9. Rate-limit logins; the server should only allow a few wrong guesses.
+10. Add CSRF tokens to every state-changing action; never change state over GET.
 
 These are the same bugs behind most real-world breaches. Fixing all of them in this
 tiny app is a complete OWASP Top 10 crash course.
